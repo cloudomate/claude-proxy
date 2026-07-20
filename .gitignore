@@ -1,0 +1,8 @@
+# secrets — never commit
+.env
+
+# compiled binary
+/tf-anthropic-proxy
+
+# OS cruft
+.DS_Store

@@ -1,0 +1,23 @@
+services:
+  tf-anthropic-proxy:
+    build: .
+    image: tf-anthropic-proxy:latest
+    container_name: tf-anthropic-proxy
+    restart: unless-stopped
+    ports:
+      - "${LISTEN_PORT:-4000}:4000"
+    environment:
+      # --- backend (any OpenAI-compatible gateway) ---
+      UPSTREAM_BASE_URL: "${UPSTREAM_BASE_URL:-https://api.tokenfactory.iamsaif.ai/v1}"
+      UPSTREAM_API_KEY: "${UPSTREAM_API_KEY:?set UPSTREAM_API_KEY in .env}"
+      # User-Agent sent upstream (tokenfactory WAF 403s the default Go UA)
+      UPSTREAM_UA: "${UPSTREAM_UA:-curl/8.4.0}"
+      LISTEN_ADDR: ":4000"
+      # set to "1" to log each incoming request body
+      DEBUG: "${DEBUG:-0}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
