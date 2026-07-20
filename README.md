@@ -78,12 +78,15 @@ c.messages.create(model="Qwen/Qwen3.6-27B", max_tokens=512,
   messages, and streaming `input_json_delta` for tool arguments. Enough to drive
   Claude Code as a coding agent (requires the backend model to support function
   calling — `Qwen/Qwen3.6-27B` does).
+- **Images**: Anthropic `image` blocks (base64 or URL) ⇆ OpenAI `image_url`
+  content parts. Forwarded only when you route to a vision-capable model (e.g.
+  `qwen/qwen3-omni-30b-a3b-instruct`); text-only models will ignore them.
 
 ## Limitations
 
-- **Image / document content blocks are not translated** (dropped).
-- `Qwen3.6` is a reasoning model: budget `max_tokens` generously or the answer
-  gets truncated by hidden reasoning tokens. Reasoning text is not surfaced.
+- **`document` (PDF) content blocks are not translated** (dropped).
+- Reasoning models (e.g. `Qwen3.6`) burn hidden tokens before output — budget
+  `max_tokens` generously or turns get truncated. Reasoning text is not surfaced.
 - The model name is passed through unchanged, so the client must send a real
-  tokenfactory model id (e.g. `Qwen/Qwen3.6-27B`).
+  backend model id (e.g. `Qwen/Qwen3.6-27B`).
 ```

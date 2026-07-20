@@ -105,6 +105,8 @@ type contentBlock struct {
 	Type string `json:"type"`
 	// text
 	Text string `json:"text"`
+	// image
+	Source *imageSource `json:"source"`
 	// tool_use
 	ID    string          `json:"id"`
 	Name  string          `json:"name"`
@@ -113,6 +115,30 @@ type contentBlock struct {
 	ToolUseID string          `json:"tool_use_id"`
 	Content   json.RawMessage `json:"content"`
 	IsError   bool            `json:"is_error"`
+}
+
+type imageSource struct {
+	Type      string `json:"type"`       // "base64" or "url"
+	MediaType string `json:"media_type"` // for base64
+	Data      string `json:"data"`       // for base64
+	URL       string `json:"url"`        // for url
+}
+
+// imageURL renders an Anthropic image source as the URL string OpenAI expects
+// (a data: URI for base64, or the URL as-is).
+func imageURL(src *imageSource) string {
+	if src == nil {
+		return ""
+	}
+	switch src.Type {
+	case "url":
+		return src.URL
+	case "base64":
+		if src.MediaType != "" && src.Data != "" {
+			return "data:" + src.MediaType + ";base64," + src.Data
+		}
+	}
+	return ""
 }
 
 // parseBlocks accepts either a bare string or an array of content blocks and
@@ -146,11 +172,24 @@ func blocksText(raw json.RawMessage) string {
 
 // ---------- OpenAI shapes ----------
 
+// Content is either a string or a []openaiContentPart (for multimodal). It is
+// left as nil (serialized as null) for assistant messages that carry only
+// tool_calls, which OpenAI permits.
 type openaiMessage struct {
 	Role       string           `json:"role"`
-	Content    *string          `json:"content"`
+	Content    any              `json:"content"`
 	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
+}
+
+type openaiContentPart struct {
+	Type     string          `json:"type"` // "text" or "image_url"
+	Text     string          `json:"text,omitempty"`
+	ImageURL *openaiImageURL `json:"image_url,omitempty"`
+}
+
+type openaiImageURL struct {
+	URL string `json:"url"`
 }
 
 type openaiToolCall struct {
@@ -241,8 +280,6 @@ func stopReason(fr string) string {
 
 // ---------- request translation ----------
 
-func strptr(s string) *string { return &s }
-
 func convertToolChoice(raw json.RawMessage) any {
 	if len(raw) == 0 {
 		return nil
@@ -292,7 +329,7 @@ func toOpenAI(ar anthropicRequest, stream bool) openaiRequest {
 
 	msgs := make([]openaiMessage, 0, len(rest)+1)
 	if len(sysParts) > 0 {
-		msgs = append(msgs, openaiMessage{Role: "system", Content: strptr(strings.Join(sysParts, "\n\n"))})
+		msgs = append(msgs, openaiMessage{Role: "system", Content: strings.Join(sysParts, "\n\n")})
 	}
 	msgs = append(msgs, rest...)
 
@@ -333,7 +370,7 @@ func textOf(blocks []contentBlock) string {
 func assistantToOpenAI(blocks []contentBlock) openaiMessage {
 	msg := openaiMessage{Role: "assistant"}
 	if t := textOf(blocks); t != "" {
-		msg.Content = strptr(t)
+		msg.Content = t
 	}
 	for _, blk := range blocks {
 		if blk.Type == "tool_use" {
@@ -351,17 +388,20 @@ func assistantToOpenAI(blocks []contentBlock) openaiMessage {
 }
 
 // userToOpenAI turns a user turn into OpenAI messages. tool_result blocks each
-// become a separate role:"tool" message; remaining text becomes a user message.
+// become a separate role:"tool" message; text and image blocks become a user
+// message (a plain string when text-only, or an array of parts when it contains
+// images, which vision models expect).
 func userToOpenAI(blocks []contentBlock) []openaiMessage {
 	var out []openaiMessage
-	var textParts []string
+	var parts []openaiContentPart
+	hasImage := false
 	for _, blk := range blocks {
 		switch blk.Type {
 		case "tool_result":
 			content := blocksText(blk.Content)
 			if content == "" {
-				// content may be a bare string already captured by blocksText;
-				// fall back to the raw form if it wasn't a text/array-of-text.
+				// content may be a bare string; fall back to the raw form if it
+				// wasn't a text/array-of-text.
 				var s string
 				if json.Unmarshal(blk.Content, &s) == nil {
 					content = s
@@ -371,14 +411,29 @@ func userToOpenAI(blocks []contentBlock) []openaiMessage {
 				content = "[tool error] " + content
 			}
 			out = append(out, openaiMessage{
-				Role: "tool", ToolCallID: blk.ToolUseID, Content: strptr(content),
+				Role: "tool", ToolCallID: blk.ToolUseID, Content: content,
 			})
 		case "text":
-			textParts = append(textParts, blk.Text)
+			parts = append(parts, openaiContentPart{Type: "text", Text: blk.Text})
+		case "image":
+			if url := imageURL(blk.Source); url != "" {
+				parts = append(parts, openaiContentPart{Type: "image_url", ImageURL: &openaiImageURL{URL: url}})
+				hasImage = true
+			}
 		}
 	}
-	if len(textParts) > 0 {
-		out = append(out, openaiMessage{Role: "user", Content: strptr(strings.Join(textParts, "\n"))})
+	if len(parts) > 0 {
+		var content any
+		if hasImage {
+			content = parts
+		} else {
+			var texts []string
+			for _, p := range parts {
+				texts = append(texts, p.Text)
+			}
+			content = strings.Join(texts, "\n")
+		}
+		out = append(out, openaiMessage{Role: "user", Content: content})
 	}
 	return out
 }
