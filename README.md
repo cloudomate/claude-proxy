@@ -1,19 +1,10 @@
 # tf-anthropic-proxy
 
 A tiny Go service that exposes an **Anthropic Messages API** (`/v1/messages`) and
-translates to the tokenfactory **OpenAI** endpoint (`/v1/chat/completions`).
+translates to an OpenAI-compatible backend (`/v1/chat/completions`) — with proper
+Anthropic SSE streaming and full tool use.
 
-Why it exists:
-- tokenfactory's native `/v1/messages` **streaming is non-compliant** — it emits
-  OpenAI `chat.completion.chunk` objects instead of Anthropic SSE events, so
-  Claude Code and the Anthropic SDK (`stream=true`) break.
-- tokenfactory's WAF **403s** the default Go/Python `User-Agent`. This proxy
-  spoofs `curl/8.4.0` upstream.
-
-This proxy emits correct Anthropic SSE (`message_start`, `content_block_start`,
-`content_block_delta`, `content_block_stop`, `message_delta`, `message_stop`).
-
-## Run with Docker Compose (recommended)
+## Run as a container
 
 ```bash
 cp .env.example .env            # then put your UPSTREAM_API_KEY in it
@@ -53,21 +44,15 @@ export UPSTREAM_API_KEY="tf-...your key..."
 ## Use with Claude Code
 
 ```bash
-export ANTHROPIC_BASE_URL=http://localhost:4000
-export ANTHROPIC_AUTH_TOKEN=anything     # proxy uses its own UPSTREAM_API_KEY
-claude --model Qwen/Qwen3.6-27B
-```
-
-### Listing backend models in the `/model` picker
-
-Claude Code (v2.1.129+) can populate `/model` from the proxy if you enable
-gateway discovery:
-
-```bash
 export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
 export ANTHROPIC_BASE_URL=http://localhost:4000
-claude          # /model now shows a "From gateway" group with backend models
+export ANTHROPIC_AUTH_TOKEN=anything     # proxy uses its own UPSTREAM_API_KEY
+claude
 ```
+
+`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` makes Claude Code (v2.1.129+)
+populate the `/model` picker with a "From gateway" group listing the backend
+models.
 
 Discovery only accepts model ids beginning with `claude`/`anthropic`, so the
 proxy's `/v1/models` aliases every backend id as `claude-proxy--<id>` (the picker
