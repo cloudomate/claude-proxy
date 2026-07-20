@@ -4,7 +4,32 @@ A tiny Go service that exposes an **Anthropic Messages API** (`/v1/messages`) an
 translates to an OpenAI-compatible backend (`/v1/chat/completions`) — with proper
 Anthropic SSE streaming and full tool use.
 
-## Run as a container
+## Use the prebuilt image
+
+A slim (~15 MB, distroless) multi-arch image (`linux/amd64` + `linux/arm64`) is
+published to GHCR — no need to clone or build:
+
+```bash
+docker run -d --name claude-proxy -p 4000:4000 \
+  -e UPSTREAM_API_KEY=tf-...your key... \
+  ghcr.io/cloudomate/claude-proxy:latest
+```
+
+Or with Compose, swap `build: .` for the image:
+
+```yaml
+services:
+  claude-proxy:
+    image: ghcr.io/cloudomate/claude-proxy:latest
+    ports: ["4000:4000"]
+    environment:
+      UPSTREAM_API_KEY: ${UPSTREAM_API_KEY}
+      UPSTREAM_BASE_URL: https://api.tokenfactory.iamsaif.ai/v1
+```
+
+Tags: `latest` and dated (e.g. `2026-07-20`).
+
+## Run as a container (from source)
 
 ```bash
 cp .env.example .env            # then put your UPSTREAM_API_KEY in it

@@ -816,7 +816,25 @@ func randID() string {
 	return fmt.Sprintf("%013x", time.Now().UnixNano())
 }
 
+// healthcheck is invoked as `tf-anthropic-proxy -health` by the container
+// HEALTHCHECK (the distroless image has no shell/wget). It hits the local
+// /healthz and exits non-zero on failure.
+func healthcheck() {
+	addr := listenAddr
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "-health" {
+		healthcheck()
+	}
 	if upstreamKey == "" {
 		log.Fatal("set UPSTREAM_API_KEY (or AIGATEWAY_API_KEY) to your tokenfactory key")
 	}
